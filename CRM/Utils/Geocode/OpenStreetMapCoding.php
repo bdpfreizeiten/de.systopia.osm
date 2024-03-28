@@ -1,26 +1,26 @@
 <?php
 /*
-  +--------------------------------------------------------------------+
-  | CiviCRM OSM Geocoding module (SYS-OSM)                             |
-  +--------------------------------------------------------------------+
-  | Copyright SYSTOPIA (c) 2014-2015                                   |
-  +--------------------------------------------------------------------+
-  | This is free software; you can copy, modify, and distribute it     |
-  | under the terms of the GNU Affero General Public License           |
-  | Version 3, 19 November 2007 and the CiviCRM Licensing Exception.   |
-  |                                                                    |
-  | SYS-OSM is distributed in the hope that it will be useful, but     |
-  | WITHOUT ANY WARRANTY; without even the implied warranty of         |
-  | MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.               |
-  | See the GNU Affero General Public License for more details.        |
-  |                                                                    |
-  | You should have received a copy of the GNU Affero General Public   |
-  | License and the SYS-OSM Licensing Exception along                  |
-  | with this program; if not, contact SYSTOPIA                        |
-  | at info[AT]systopia[DOT]de. If you have questions about the        |
-  | GNU Affero General Public License or the licensing of CiviCRM,     |
-  | see the CiviCRM license FAQ at http://civicrm.org/licensing        |
-  +--------------------------------------------------------------------+
++--------------------------------------------------------------------+
+| CiviCRM OSM Geocoding module (SYS-OSM)                             |
++--------------------------------------------------------------------+
+| Copyright SYSTOPIA (c) 2014-2015                                   |
++--------------------------------------------------------------------+
+| This is free software; you can copy, modify, and distribute it     |
+| under the terms of the GNU Affero General Public License           |
+| Version 3, 19 November 2007 and the CiviCRM Licensing Exception.   |
+|                                                                    |
+| SYS-OSM is distributed in the hope that it will be useful, but     |
+| WITHOUT ANY WARRANTY; without even the implied warranty of         |
+| MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.               |
+| See the GNU Affero General Public License for more details.        |
+|                                                                    |
+| You should have received a copy of the GNU Affero General Public   |
+| License and the SYS-OSM Licensing Exception along                  |
+| with this program; if not, contact SYSTOPIA                        |
+| at info[AT]systopia[DOT]de. If you have questions about the        |
+| GNU Affero General Public License or the licensing of CiviCRM,     |
+| see the CiviCRM license FAQ at http://civicrm.org/licensing        |
++--------------------------------------------------------------------+
  */
 
 /**
@@ -74,7 +74,7 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
   public static function format(&$values, $stateName = FALSE) {
     CRM_Utils_System::checkPHPVersion(5, TRUE);
 
-    $params = array();
+    $params = [];
 
     // TODO: is there a more failsafe format for street and street-number?
     if (CRM_Utils_Array::value('street_address', $values)) {
@@ -130,6 +130,9 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
     $url = "https://" . self::$_server . self::$_uri;
     $url .= '?format=json';
     foreach ($params as $key => $value) {
+      if (!isset($key) || !isset($value)) {// Passing null to urlencode is deprecated
+        continue;
+      }
       $url .= '&' . urlencode($key) . '=' . urlencode($value);
     }
 
@@ -137,6 +140,13 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
 
     $values['geo_code_1'] = $coord['geo_code_1'] ?? 'null';
     $values['geo_code_2'] = $coord['geo_code_2'] ?? 'null';
+
+    if (!array_key_exists('state_province_id', $values) || $values['state_province_id'] === 'null' || $values['state_province_id'] === '') {
+      $values['state_province_id'] = $coord['state_province_id'] ?? 'null';
+    }
+    if (!array_key_exists('county_id', $values) || $values['county_id'] === 'null' || $values['county_id'] === '') {
+      $values['county_id'] = $coord['county_id'] ?? 'null';
+    }
 
     if (isset($coord['geo_code_error'])) {
       $values['geo_code_error'] = $coord['geo_code_error'];
@@ -162,9 +172,9 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
     $cacheKey = substr(sha1($url), 0, 12);
     $json = $cache->get($cacheKey);
     $foundInCache = !empty($json);
+
     if (!$foundInCache) {
       // No valid value found in cache.
-
       $client = new GuzzleHttp\Client();
       // Nominatim's terms of use require us to submit a real user agent to
       // identify ourselves.  Rate limiting may be done using this. We use the
@@ -209,13 +219,18 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
       $cache->set($cacheKey, $json);
       return [];
     }
-    elseif (is_array($json[0]) && array_key_exists('lat', $json[0]) && array_key_exists('lon', $json[0])) {
+    elseif (isset($json[0]->lat) && isset($json[0]->lon)) {
       // TODO: Process other relevant data to update address
       // Save in cache.
       $cache->set($cacheKey, $json);
+
+      [$state_province_id, $county_id] = self::getCountyStateID($json[0]->address);
+
       return [
         'geo_code_1' => (float) substr($json[0]->lat, 0, 12),
         'geo_code_2' => (float) substr($json[0]->lon, 0, 12),
+        'state_province_id' => $state_province_id,
+        'county_id' => $county_id,
       ];
 
     }
@@ -225,6 +240,68 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
       CRM_Core_Error::debug_log_message('Geocoding failed. Response was positive, but no coordinates were delivered.');
       return [];
     }
+  }
+
+  /**
+   * @param object $address
+   *   address from geocoding result
+   * @return array
+   *   ID of state and conty
+   */
+  public static function getCountyStateID($address) {
+    $county_id = NULL;
+    $state_province_id = NULL;
+
+    if (isset($address->county)) {
+      $countyName = $address->county;//Landkreis
+    }
+    elseif (isset($address->city)) {
+      $countyName = $address->city;//Kreisfreiestadt
+    }
+    elseif (isset($address->town)) {
+      $countyName = $address->town;//Kreisfreiestadt with alternative name, city vs. town all the same
+    }
+
+    if (isset($address->state)) {
+      $stateName = $address->state; //Bundesland
+    }
+    elseif (!empty($countyName)) {
+      $stateName = $countyName; //e.g. Hamburg
+    }
+
+    if (!empty($countyName)) {
+      $counties = \Civi\Api4\County::get(TRUE)
+        ->addWhere('name', '=', $countyName)
+        ->execute();
+      if ($counties->count() > 0) {
+        $county_id = $counties->first()['id'];
+      }
+    }
+
+    if (!empty($stateName)) {
+      $state = \Civi\Api4\StateProvince::get(TRUE)
+        ->addWhere('name', '=', $stateName)
+        ->execute();
+      if ($state->count() > 0) {
+        $state_province_id = $state->first()['id'];
+      }
+    }
+
+    if (isset($state_province_id) && isset($county_id)) {
+      return [$state_province_id, $county_id];
+    }
+
+    if (isset($state_province_id) && isset($countyName)) {// create the county because civicrm db for counties is normal empty
+      $county = \Civi\Api4\County::create(TRUE)
+        ->addValue('state_province_id', $state_province_id)
+        ->addValue('name', $countyName)
+        ->execute();
+      if ($county->count() > 0) {
+        $county_id = $county->first()['id'];
+      }
+    }
+
+    return [$state_province_id, $county_id];
   }
 
 }
