@@ -270,7 +270,7 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
     }
 
     if (!empty($countyName)) {
-      $counties = \Civi\Api4\County::get(TRUE)
+      $counties = \Civi\Api4\County::get(FALSE)
         ->addWhere('name', '=', $countyName)
         ->execute();
       if ($counties->count() > 0) {
@@ -279,7 +279,7 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
     }
 
     if (!empty($stateName)) {
-      $state = \Civi\Api4\StateProvince::get(TRUE)
+      $state = \Civi\Api4\StateProvince::get(FALSE)
         ->addWhere('name', '=', $stateName)
         ->execute();
       if ($state->count() > 0) {
@@ -292,7 +292,7 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
     }
 
     if (isset($state_province_id) && isset($countyName)) {// create the county because civicrm db for counties is normal empty
-      $county = \Civi\Api4\County::create(TRUE)
+      $county = \Civi\Api4\County::create(FALSE)
         ->addValue('state_province_id', $state_province_id)
         ->addValue('name', $countyName)
         ->execute();
