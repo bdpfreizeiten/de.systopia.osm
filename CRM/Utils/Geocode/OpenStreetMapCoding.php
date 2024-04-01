@@ -117,8 +117,7 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
     }
 
     // There should be at least a city or postal_code, a street and a country
-    if (!(array_key_exists('street', $params)
-        && array_key_exists('country', $params)
+    if (!(array_key_exists('country', $params)
         && (array_key_exists('city', $params) || array_key_exists('postalcode', $params)))) {
       // the error logging is disabled, because it potentially produces a lot of log messages
       //CRM_Core_Error::debug_log_message('Geocoding failed. Address data is incomplete.');
@@ -127,16 +126,27 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
     }
 
     $params['addressdetails'] = '1';
-    $url = "https://" . self::$_server . self::$_uri;
-    $url .= '?format=json';
+    $url = "https://" . self::$_server . self::$_uri . '?format=json';
+    $urlParams = '';
     foreach ($params as $key => $value) {
       if (!isset($key) || !isset($value)) {// Passing null to urlencode is deprecated
         continue;
       }
-      $url .= '&' . urlencode($key) . '=' . urlencode($value);
+      $urlParams .= '&' . urlencode($key) . '=' . urlencode($value);
     }
+    $coord = self::makeRequest($url . $urlParams);
 
-    $coord = self::makeRequest($url);
+    if (count($coord) === 0) {//try again without street, because it often fails
+      unset($params['street']);
+      $urlParams = '';
+      foreach ($params as $key => $value) {
+        if (!isset($key) || !isset($value)) {// Passing null to urlencode is deprecated
+          continue;
+        }
+        $urlParams .= '&' . urlencode($key) . '=' . urlencode($value);
+      }
+      $coord = self::makeRequest($url . $urlParams);
+    }
 
     $values['geo_code_1'] = $coord['geo_code_1'] ?? 'null';
     $values['geo_code_2'] = $coord['geo_code_2'] ?? 'null';
