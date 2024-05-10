@@ -211,7 +211,7 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
 
       // Process results
       $string = $request->getBody();
-      $json = json_decode($string);
+      $json = json_decode($string, TRUE);
     }
 
     if (is_null($json) || !is_array($json)) {
@@ -237,8 +237,8 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
       [$state_province_id, $county_id] = self::getCountyStateID($json[0]->address);
 
       return [
-        'geo_code_1' => (float) substr($json[0]->lat, 0, 12),
-        'geo_code_2' => (float) substr($json[0]->lon, 0, 12),
+        'geo_code_1' => (float) substr($json[0]['lat'], 0, 12),
+        'geo_code_2' => (float) substr($json[0]['lon'], 0, 12),
         'state_province_id' => $state_province_id,
         'county_id' => $county_id,
       ];
