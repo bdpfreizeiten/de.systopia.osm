@@ -229,12 +229,12 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
       $cache->set($cacheKey, $json);
       return [];
     }
-    elseif (isset($json[0]->lat) && isset($json[0]->lon)) {
+    elseif (is_array($json[0]) && array_key_exists('lat', $json[0]) && array_key_exists('lon', $json[0])) {
       // TODO: Process other relevant data to update address
       // Save in cache.
       $cache->set($cacheKey, $json);
 
-      [$state_province_id, $county_id] = self::getCountyStateID($json[0]->address);
+      [$state_province_id, $county_id] = self::getCountyStateID($json[0]['address']);
 
       return [
         'geo_code_1' => (float) substr($json[0]['lat'], 0, 12),
@@ -247,7 +247,9 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
     else {
       // Don't know what went wrong... we got an array, but without lat and lon.
       // We don't save this in the cache.
-      CRM_Core_Error::debug_log_message('Geocoding failed. Response was positive, but no coordinates were delivered.');
+      \Civi::log()->info('Geocoding failed. Response was positive, but no coordinates were delivered.', [
+        'url' => $url,
+      ]);
       return [];
     }
   }
@@ -262,18 +264,19 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
     $county_id = NULL;
     $state_province_id = NULL;
 
-    if (isset($address->county)) {
-      $countyName = $address->county;//Landkreis
+    
+    if (array_key_exists('county', $address)) {
+      $countyName = $address['county'];//Landkreis
     }
-    elseif (isset($address->city)) {
-      $countyName = $address->city;//Kreisfreiestadt
+    elseif (array_key_exists('city', $address)) {
+      $countyName = $address['city'];//Kreisfreiestadt
     }
-    elseif (isset($address->town)) {
-      $countyName = $address->town;//Kreisfreiestadt with alternative name, city vs. town all the same
+    elseif (array_key_exists('town', $address)) {
+      $countyName = $address['town'];//Kreisfreiestadt with alternative name, city vs. town all the same
     }
 
-    if (isset($address->state)) {
-      $stateName = $address->state; //Bundesland
+    if (array_key_exists('state', $address)) {
+      $stateName = $address['state']; //Bundesland
     }
     elseif (!empty($countyName)) {
       $stateName = $countyName; //e.g. Hamburg
