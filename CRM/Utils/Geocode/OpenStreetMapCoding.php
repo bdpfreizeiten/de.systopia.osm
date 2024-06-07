@@ -136,7 +136,7 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
     }
     $coord = self::makeRequest($url . $urlParams);
 
-    if (count($coord) === 0) {//try again without street, because it often fails
+    if (count($coord) === 0) {//try again without street, because it often fails, because of wrong spelling
       unset($params['street']);
       $urlParams = '';
       foreach ($params as $key => $value) {
@@ -239,8 +239,8 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
       return [
         'geo_code_1' => (float) substr($json[0]['lat'], 0, 12),
         'geo_code_2' => (float) substr($json[0]['lon'], 0, 12),
-        'state_province_id' => $state_province_id,
-        'county_id' => $county_id,
+        'state_province_id' => $state_province_id ?? 'null',
+        'county_id' => $county_id ?? 'null',
       ];
 
     }
