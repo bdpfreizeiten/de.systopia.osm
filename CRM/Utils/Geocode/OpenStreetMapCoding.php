@@ -154,6 +154,9 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
     if (!array_key_exists('county_id', $values) || $values['county_id'] === 'null' || $values['county_id'] === '') {
       $values['county_id'] = $coord['county_id'] ?? 'null';
     }
+    if (!array_key_exists('country_id', $values) || $values['country_id'] === 'null' || $values['country_id'] === '') {
+      $values['country_id'] = $coord['country_id'] ?? 'null';
+    }
 
     if (isset($coord['geo_code_error'])) {
       $values['geo_code_error'] = $coord['geo_code_error'];
@@ -231,11 +234,12 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
       // Save in cache.
       $cache->set($cacheKey, $json);
 
-      [$state_province_id, $county_id] = self::getCountyStateID($json[0]['address']);
+      [$country_id, $state_province_id, $county_id] = self::getCountryCountyStateID($json[0]['address']);
 
       return [
         'geo_code_1' => (float) substr($json[0]['lat'], 0, 12),
         'geo_code_2' => (float) substr($json[0]['lon'], 0, 12),
+        'country_id' => $country_id ?? 'null',
         'state_province_id' => $state_province_id ?? 'null',
         'county_id' => $county_id ?? 'null',
       ];
@@ -257,19 +261,26 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
    * @return array
    *   ID of state and conty
    */
-  public static function getCountyStateID($address) {
+  public static function getCountryCountyStateID($address) {
     $county_id = NULL;
     $state_province_id = NULL;
+    $country_id = NULL;
 
-    
-    if (array_key_exists('county', $address)) {
-      $countyName = $address['county'];//Landkreis
+    if (array_key_exists('country_code', $address)) {
+      $country_code = $address['country_code'];//use iso_code, because names are translated
     }
-    elseif (array_key_exists('city', $address)) {
-      $countyName = $address['city'];//Kreisfreiestadt
+
+    if (!empty($country_code)) {
+      $countries = \Civi\Api4\Country::get(FALSE)
+        ->addWhere('iso_code', '=', $country_code)
+        ->execute();
+      if ($countries->count() > 0) {
+        $country_id = $countries->first()['id'];
+      }
     }
-    elseif (array_key_exists('town', $address)) {
-      $countyName = $address['town'];//Kreisfreiestadt with alternative name, city vs. town all the same
+
+    if (!isset($country_id)) {
+      return [$country_id, $state_province_id, $county_id];
     }
 
     if (array_key_exists('state', $address)) {
@@ -277,15 +288,6 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
     }
     elseif (!empty($countyName)) {
       $stateName = $countyName; //e.g. Hamburg
-    }
-
-    if (!empty($countyName)) {
-      $counties = \Civi\Api4\County::get(FALSE)
-        ->addWhere('name', '=', $countyName)
-        ->execute();
-      if ($counties->count() > 0) {
-        $county_id = $counties->first()['id'];
-      }
     }
 
     if (!empty($stateName)) {
@@ -297,21 +299,40 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
       }
     }
 
-    if (isset($state_province_id) && isset($county_id)) {
-      return [$state_province_id, $county_id];
+    if (!isset($state_province_id)) {
+      return [$country_id, $state_province_id, $county_id];
+    }
+ 
+    if (array_key_exists('county', $address)) {
+      $countyName = $address['county'];//Landkreis
+    }
+    elseif (array_key_exists('city', $address)) {
+      $countyName = $address['city'];//Kreisfreiestadt
+    }
+    elseif (array_key_exists('town', $address)) {
+      $countyName = $address['town'];//Kreisfreiestadt with alternative name, city vs.
     }
 
-    if (isset($state_province_id) && isset($countyName)) {// create the county because civicrm db for counties is normal empty
-      $county = \Civi\Api4\County::create(FALSE)
-        ->addValue('state_province_id', $state_province_id)
-        ->addValue('name', $countyName)
+    if (!empty($countyName)) {
+      $counties = \Civi\Api4\County::get(FALSE)
+        ->addWhere('name', '=', $countyName)
         ->execute();
-      if ($county->count() > 0) {
-        $county_id = $county->first()['id'];
+      if ($counties->count() > 0) {
+        $county_id = $counties->first()['id'];
+      }
+      else if (isset($state_province_id)) {
+        // create the county because civicrm db for counties is normal empty
+        $county = \Civi\Api4\County::create(FALSE)
+          ->addValue('state_province_id', $state_province_id)
+          ->addValue('name', $countyName)
+          ->execute();
+        if ($county->count() > 0) {
+          $county_id = $county->first()['id'];
+        }
       }
     }
 
-    return [$state_province_id, $county_id];
+    return [$country_id, $state_province_id, $county_id];
   }
 
 }
