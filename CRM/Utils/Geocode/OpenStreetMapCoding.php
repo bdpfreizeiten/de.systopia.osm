@@ -123,11 +123,12 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
     }
 
     $params['addressdetails'] = '1';
-    $url = "https://" . self::$_server . self::$_uri . '?format=json';
+    $params['format'] = 'json';
+    $url = "https://" . self::$_server . self::$_uri;
 
     $coord = self::makeRequest($url, $params);
 
-    if (count($coord) === 0) {
+    if (count($coord) === 0 && count($params) > 3) {
       //try again without street. It often fails, because of wrong spelling
       unset($params['street']);
       $coord = self::makeRequest($url, $params);
@@ -167,13 +168,12 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
     // Nominatim requires that we cache lookups, since they're donating this
     // service for free.
 
-    $urlWithParams = $url;
     foreach ($params as $key => $value) {
-      $urlWithParams .= '&' . urlencode($key) . '=' . urlencode($value);
+      $url .= '&' . urlencode($key) . '=' . urlencode($value);
     }
 
     $cache = CRM_Utils_Cache::create(['type' => ['SqlGroup'], 'name' => 'geocode_osm']);
-    $cacheKey = substr(sha1($urlWithParams), 0, 12);
+    $cacheKey = substr(sha1($url), 0, 12);
     $json = $cache->get($cacheKey);
     $foundInCache = !empty($json);
 
@@ -188,7 +188,7 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
       // organisation could be sensitive.
       // @see https://operations.osmfoundation.org/policies/nominatim/
       $appName =  CRM_Core_Config::singleton()->geoAPIKey ?: substr(sha1(CRM_Core_BAO_Domain::getDomain()->name . CIVICRM_SITE_KEY), 0, 12);
-      $request = $client->request('GET', $urlWithParams, ['headers' => ['User-Agent' => "CiviCRM instance ($appName)"]]);
+      $request = $client->request('GET', $url, ['headers' => ['User-Agent' => "CiviCRM instance ($appName)"]]);
 
       // check if request was successful
       if ($request->getStatusCode() != 200) {
@@ -211,14 +211,14 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
     if (is_null($json) || !is_array($json)) {
       // $string could not be decoded; maybe the service is down...
       // We don't save this in the cache.
-      CRM_Core_Error::debug_log_message('Geocoding failed. "' . $string . '" is no valid json-code. (' . $urlWithParams . ')');
-      return ['geo_code_error' => 'Geocoding failed. "' . $string . '" is no valid json-code. (' . $urlWithParams . ')'];
+      CRM_Core_Error::debug_log_message('Geocoding failed. "' . $string . '" is no valid json-code. (' . $url . ')');
+      return ['geo_code_error' => 'Geocoding failed. "' . $string . '" is no valid json-code. (' . $url . ')'];
 
     }
     elseif (count($json) == 0) {
       // Array is empty; address is probably invalid...
       // Error logging is disabled, because it potentially reveals address data to the log
-      // CRM_Core_Error::debug_log_message('Geocoding failed.  No results for: ' . $urlWithParams);
+      // CRM_Core_Error::debug_log_message('Geocoding failed.  No results for: ' . $url);
       // Save in cache so we don't keep repeating the same failed query.
       $cache->set($cacheKey, $json);
       return [];
@@ -243,7 +243,7 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
       // Don't know what went wrong... we got an array, but without lat and lon.
       // We don't save this in the cache.
       \Civi::log()->info('Geocoding failed. Response was positive, but no coordinates were delivered.', [
-        'url' => $urlWithParams,
+        'url' => $url,
       ]);
       return [];
     }
@@ -260,14 +260,29 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
     $state_province_id = NULL;
     $country_id = NULL;
 
-    debug_to_console($params);
+    //use iso_code, because names are translated
+    if (array_key_exists('country_code', $address)) {
+     $country_code = $address['country_code'];
+    }
+
+    if (array_key_exists('county', $address)) {
+      $countyName = $address['county'];//Landkreis
+    }
+    elseif (array_key_exists('city', $address)) {
+      $countyName = $address['city'];//Kreisfreiestadt
+    }
+    elseif (array_key_exists('town', $address)) {
+      $countyName = $address['town'];//Kreisfreiestadt with alternative name, city vs.
+    }
+
+    if (array_key_exists('state', $address)) {
+      $stateName = $address['state']; //Bundesland
+    }
+    elseif (!empty($address['county'])) {
+      $stateName = $countyName; //e.g. Hamburg
+    }
 
     if (!array_key_exists('country', $params)) {
-      //use iso_code, because names are translated
-      if (array_key_exists('country_code', $address)) {
-        $country_code = $address['country_code'];
-      }
-
       if (!empty($country_code)) {
         $countries = \Civi\Api4\Country::get(FALSE)
           ->addWhere('iso_code', '=', $country_code)
@@ -283,13 +298,6 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
     }
 
     if (!array_key_exists('state_province', $params)) {
-      if (array_key_exists('state', $address)) {
-        $stateName = $address['state']; //Bundesland
-      }
-      elseif (!empty($countyName)) {
-        $stateName = $countyName; //e.g. Hamburg
-      }
-
       if (!empty($stateName)) {
         $state = \Civi\Api4\StateProvince::get(FALSE)
           ->addWhere('name', '=', $stateName)
@@ -305,16 +313,6 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
     }
 
     if (!array_key_exists('county', $params)) {
-      if (array_key_exists('county', $address)) {
-        $countyName = $address['county'];//Landkreis
-      }
-      elseif (array_key_exists('city', $address)) {
-        $countyName = $address['city'];//Kreisfreiestadt
-      }
-      elseif (array_key_exists('town', $address)) {
-        $countyName = $address['town'];//Kreisfreiestadt with alternative name, city vs.
-      }
-
       if (!empty($countyName)) {
         $counties = \Civi\Api4\County::get(FALSE)
           ->addWhere('name', '=', $countyName)
