@@ -77,15 +77,15 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
     $params = [];
 
     // TODO: is there a more failsafe format for street and street-number?
-    if (CRM_Utils_Array::value('street_address', $values)) {
+    if (CRM_Utils_Array::value('street_address', $values) && !empty($values['street_address'])) {
       $params['street'] = $values['street_address'];
     }
 
-    if ($city = CRM_Utils_Array::value('city', $values)) {
-      $params['city'] = $city;
+    if (CRM_Utils_Array::value('city', $values) && !empty($values['city'])) {
+      $params['city'] = $values['city'];
     }
 
-    if (CRM_Utils_Array::value('state_province', $values)) {
+    if (CRM_Utils_Array::value('state_province', $values) && !empty($values['state_province'])) {
       if (CRM_Utils_Array::value('state_province_id', $values)) {
         $stateProvince = CRM_Core_DAO::getFieldValue('CRM_Core_DAO_StateProvince', $values['state_province_id']);
       }
@@ -108,11 +108,11 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
       }
     }
 
-    if (CRM_Utils_Array::value('postal_code', $values)) {
+    if (CRM_Utils_Array::value('postal_code', $values) && !empty($values['postal_code'])) {
       $params['postalcode'] = $values['postal_code'];
     }
 
-    if (CRM_Utils_Array::value('country', $values)) {
+    if (CRM_Utils_Array::value('country', $values) && !empty($values['country'])) {
       $params['country'] = $values['country'];
     }
 
@@ -124,25 +124,13 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
 
     $params['addressdetails'] = '1';
     $url = "https://" . self::$_server . self::$_uri . '?format=json';
-    $urlParams = '';
-    foreach ($params as $key => $value) {
-      if (!isset($key) || !isset($value)) {// Passing null to urlencode is deprecated
-        continue;
-      }
-      $urlParams .= '&' . urlencode($key) . '=' . urlencode($value);
-    }
-    $coord = self::makeRequest($url . $urlParams);
 
-    if (count($coord) === 0) {//try again without street, because it often fails, because of wrong spelling
+    $coord = self::makeRequest($url, $params);
+
+    if (count($coord) === 0) {
+      //try again without street. It often fails, because of wrong spelling
       unset($params['street']);
-      $urlParams = '';
-      foreach ($params as $key => $value) {
-        if (!isset($key) || !isset($value)) {// Passing null to urlencode is deprecated
-          continue;
-        }
-        $urlParams .= '&' . urlencode($key) . '=' . urlencode($value);
-      }
-      $coord = self::makeRequest($url . $urlParams);
+      $coord = self::makeRequest($url, $params);
     }
 
     $values['geo_code_1'] = $coord['geo_code_1'] ?? 'null';
@@ -157,7 +145,7 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
     if (!array_key_exists('country_id', $values) || $values['country_id'] === 'null' || $values['country_id'] === '') {
       $values['country_id'] = $coord['country_id'] ?? 'null';
     }
-
+  
     if (isset($coord['geo_code_error'])) {
       $values['geo_code_error'] = $coord['geo_code_error'];
     }
@@ -175,11 +163,17 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
    * @return array
    * @throws \GuzzleHttp\Exception\GuzzleException
    */
-  private static function makeRequest($url): array {
+  private static function makeRequest($url, $params): array {
     // Nominatim requires that we cache lookups, since they're donating this
     // service for free.
+
+    $urlWithParams = $url;
+    foreach ($params as $key => $value) {
+      $urlWithParams .= '&' . urlencode($key) . '=' . urlencode($value);
+    }
+
     $cache = CRM_Utils_Cache::create(['type' => ['SqlGroup'], 'name' => 'geocode_osm']);
-    $cacheKey = substr(sha1($url), 0, 12);
+    $cacheKey = substr(sha1($urlWithParams), 0, 12);
     $json = $cache->get($cacheKey);
     $foundInCache = !empty($json);
 
@@ -194,7 +188,7 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
       // organisation could be sensitive.
       // @see https://operations.osmfoundation.org/policies/nominatim/
       $appName =  CRM_Core_Config::singleton()->geoAPIKey ?: substr(sha1(CRM_Core_BAO_Domain::getDomain()->name . CIVICRM_SITE_KEY), 0, 12);
-      $request = $client->request('GET', $url, ['headers' => ['User-Agent' => "CiviCRM instance ($appName)"]]);
+      $request = $client->request('GET', $urlWithParams, ['headers' => ['User-Agent' => "CiviCRM instance ($appName)"]]);
 
       // check if request was successful
       if ($request->getStatusCode() != 200) {
@@ -217,14 +211,14 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
     if (is_null($json) || !is_array($json)) {
       // $string could not be decoded; maybe the service is down...
       // We don't save this in the cache.
-      CRM_Core_Error::debug_log_message('Geocoding failed. "' . $string . '" is no valid json-code. (' . $url . ')');
-      return ['geo_code_error' => 'Geocoding failed. "' . $string . '" is no valid json-code. (' . $url . ')'];
+      CRM_Core_Error::debug_log_message('Geocoding failed. "' . $string . '" is no valid json-code. (' . $urlWithParams . ')');
+      return ['geo_code_error' => 'Geocoding failed. "' . $string . '" is no valid json-code. (' . $urlWithParams . ')'];
 
     }
     elseif (count($json) == 0) {
       // Array is empty; address is probably invalid...
       // Error logging is disabled, because it potentially reveals address data to the log
-      // CRM_Core_Error::debug_log_message('Geocoding failed.  No results for: ' . $url);
+      // CRM_Core_Error::debug_log_message('Geocoding failed.  No results for: ' . $urlWithParams);
       // Save in cache so we don't keep repeating the same failed query.
       $cache->set($cacheKey, $json);
       return [];
@@ -234,14 +228,14 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
       // Save in cache.
       $cache->set($cacheKey, $json);
 
-      [$country_id, $state_province_id, $county_id] = self::getCountryCountyStateID($json[0]['address']);
+      [$country_id, $state_province_id, $county_id] = self::getCountryCountyStateID($json[0]['address'], $params);
 
       return [
         'geo_code_1' => (float) substr($json[0]['lat'], 0, 12),
         'geo_code_2' => (float) substr($json[0]['lon'], 0, 12),
-        'country_id' => $country_id ?? 'null',
-        'state_province_id' => $state_province_id ?? 'null',
-        'county_id' => $county_id ?? 'null',
+        'country_id' => $country_id,
+        'state_province_id' => $state_province_id,
+        'county_id' => $county_id,
       ];
 
     }
@@ -249,7 +243,7 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
       // Don't know what went wrong... we got an array, but without lat and lon.
       // We don't save this in the cache.
       \Civi::log()->info('Geocoding failed. Response was positive, but no coordinates were delivered.', [
-        'url' => $url,
+        'url' => $urlWithParams,
       ]);
       return [];
     }
@@ -261,73 +255,82 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
    * @return array
    *   ID of state and conty
    */
-  public static function getCountryCountyStateID($address) {
+  public static function getCountryCountyStateID($address, $params = []) {
     $county_id = NULL;
     $state_province_id = NULL;
     $country_id = NULL;
 
-    if (array_key_exists('country_code', $address)) {
-      $country_code = $address['country_code'];//use iso_code, because names are translated
-    }
+    debug_to_console($params);
 
-    if (!empty($country_code)) {
-      $countries = \Civi\Api4\Country::get(FALSE)
-        ->addWhere('iso_code', '=', $country_code)
-        ->execute();
-      if ($countries->count() > 0) {
-        $country_id = $countries->first()['id'];
+    if (!array_key_exists('country', $params)) {
+      //use iso_code, because names are translated
+      if (array_key_exists('country_code', $address)) {
+        $country_code = $address['country_code'];
       }
-    }
 
-    if (!isset($country_id)) {
-      return [$country_id, $state_province_id, $county_id];
-    }
-
-    if (array_key_exists('state', $address)) {
-      $stateName = $address['state']; //Bundesland
-    }
-    elseif (!empty($countyName)) {
-      $stateName = $countyName; //e.g. Hamburg
-    }
-
-    if (!empty($stateName)) {
-      $state = \Civi\Api4\StateProvince::get(FALSE)
-        ->addWhere('name', '=', $stateName)
-        ->execute();
-      if ($state->count() > 0) {
-        $state_province_id = $state->first()['id'];
-      }
-    }
-
-    if (!isset($state_province_id)) {
-      return [$country_id, $state_province_id, $county_id];
-    }
- 
-    if (array_key_exists('county', $address)) {
-      $countyName = $address['county'];//Landkreis
-    }
-    elseif (array_key_exists('city', $address)) {
-      $countyName = $address['city'];//Kreisfreiestadt
-    }
-    elseif (array_key_exists('town', $address)) {
-      $countyName = $address['town'];//Kreisfreiestadt with alternative name, city vs.
-    }
-
-    if (!empty($countyName)) {
-      $counties = \Civi\Api4\County::get(FALSE)
-        ->addWhere('name', '=', $countyName)
-        ->execute();
-      if ($counties->count() > 0) {
-        $county_id = $counties->first()['id'];
-      }
-      else if (isset($state_province_id)) {
-        // create the county because civicrm db for counties is normal empty
-        $county = \Civi\Api4\County::create(FALSE)
-          ->addValue('state_province_id', $state_province_id)
-          ->addValue('name', $countyName)
+      if (!empty($country_code)) {
+        $countries = \Civi\Api4\Country::get(FALSE)
+          ->addWhere('iso_code', '=', $country_code)
           ->execute();
-        if ($county->count() > 0) {
-          $county_id = $county->first()['id'];
+        if ($countries->count() > 0) {
+          $country_id = $countries->first()['id'];
+        }
+      }
+
+      if (!isset($country_id)) {
+        return [$country_id, $state_province_id, $county_id];
+      }
+    }
+
+    if (!array_key_exists('state_province', $params)) {
+      if (array_key_exists('state', $address)) {
+        $stateName = $address['state']; //Bundesland
+      }
+      elseif (!empty($countyName)) {
+        $stateName = $countyName; //e.g. Hamburg
+      }
+
+      if (!empty($stateName)) {
+        $state = \Civi\Api4\StateProvince::get(FALSE)
+          ->addWhere('name', '=', $stateName)
+          ->execute();
+        if ($state->count() > 0) {
+          $state_province_id = $state->first()['id'];
+        }
+      }
+
+      if (!isset($state_province_id)) {
+        return [$country_id, $state_province_id, $county_id];
+      }
+    }
+
+    if (!array_key_exists('county', $params)) {
+      if (array_key_exists('county', $address)) {
+        $countyName = $address['county'];//Landkreis
+      }
+      elseif (array_key_exists('city', $address)) {
+        $countyName = $address['city'];//Kreisfreiestadt
+      }
+      elseif (array_key_exists('town', $address)) {
+        $countyName = $address['town'];//Kreisfreiestadt with alternative name, city vs.
+      }
+
+      if (!empty($countyName)) {
+        $counties = \Civi\Api4\County::get(FALSE)
+          ->addWhere('name', '=', $countyName)
+          ->execute();
+        if ($counties->count() > 0) {
+          $county_id = $counties->first()['id'];
+        }
+        else if (isset($state_province_id)) {
+          // create the county because civicrm db for counties is normal empty
+          $county = \Civi\Api4\County::create(FALSE)
+            ->addValue('state_province_id', $state_province_id)
+            ->addValue('name', $countyName)
+            ->execute();
+          if ($county->count() > 0) {
+            $county_id = $county->first()['id'];
+          }
         }
       }
     }
