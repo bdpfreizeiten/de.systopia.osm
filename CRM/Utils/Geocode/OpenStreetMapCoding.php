@@ -124,7 +124,7 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
 
     $params['addressdetails'] = '1';
     $params['format'] = 'json';
-    $url = "https://" . self::$_server . self::$_uri;
+    $url = "https://" . self::$_server . self::$_uri .'?';
 
     $coord = self::makeRequest($url, $params);
 
