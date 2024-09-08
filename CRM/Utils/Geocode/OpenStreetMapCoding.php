@@ -75,7 +75,7 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
     CRM_Utils_System::checkPHPVersion(5, TRUE);
 
     $params = [];
-
+    Civi::log()->debug('blub1');
     // TODO: is there a more failsafe format for street and street-number?
     if (CRM_Utils_Array::value('street_address', $values) && !empty($values['street_address'])) {
       $params['street'] = $values['street_address'];
@@ -115,6 +115,10 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
     if (CRM_Utils_Array::value('country', $values) && !empty($values['country'])) {
       $params['country'] = $values['country'];
     }
+
+    
+    \Civi::log()->info($params);
+
 
     if (count($params) === 0) {
       $values['geo_code_1'] = $values['geo_code_2'] = 'null';
