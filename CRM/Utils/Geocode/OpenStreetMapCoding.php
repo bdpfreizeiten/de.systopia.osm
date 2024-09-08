@@ -128,7 +128,7 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
 
     $coord = self::makeRequest($url, $params);
 
-    if (count($coord) === 0 && count($params) > 3) {
+    if (count($coord) === 0 && (array_key_exists('city', $params) || array_key_exists('postalcode', $params))) {
       //try again without street. It often fails, because of wrong spelling
       unset($params['street']);
       $coord = self::makeRequest($url, $params);
