@@ -115,6 +115,10 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
       $params['country'] = $values['country'];
     }
 
+    
+    \Civi::log()->info($params);
+
+
     if (count($params) === 0) {
       $values['geo_code_1'] = $values['geo_code_2'] = 'null';
       return FALSE;
