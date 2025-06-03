@@ -75,6 +75,7 @@ class CRM_Osm_ExtensionUtil {
     return self::CLASS_PREFIX . '_' . str_replace('\\', '_', $suffix);
   }
 
+
 }
 
 use CRM_Osm_ExtensionUtil as E;
