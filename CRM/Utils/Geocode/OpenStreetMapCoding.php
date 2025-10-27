@@ -77,16 +77,16 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
     $params = array();
 
     // TODO: is there a more failsafe format for street and street-number?
-    if (CRM_Utils_Array::value('street_address', $values)) {
+    if (!empty($values['street_address'])) {
       $params['street'] = $values['street_address'];
     }
 
-    if ($city = CRM_Utils_Array::value('city', $values)) {
+    if ($city = ($values['city'] ?? NULL)) {
       $params['city'] = $city;
     }
 
-    if (CRM_Utils_Array::value('state_province', $values)) {
-      if (CRM_Utils_Array::value('state_province_id', $values)) {
+    if (!empty($values['state_province'])) {
+      if (!empty($values['state_province_id'])) {
         $stateProvince = CRM_Core_DAO::getFieldValue('CRM_Core_DAO_StateProvince', $values['state_province_id']);
       }
       else {
@@ -108,11 +108,11 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
       }
     }
 
-    if (CRM_Utils_Array::value('postal_code', $values)) {
+    if (!empty($values['postal_code'])) {
       $params['postalcode'] = $values['postal_code'];
     }
 
-    if (CRM_Utils_Array::value('country', $values)) {
+    if (!empty($values['country'])) {
       $params['country'] = $values['country'];
     }
 
