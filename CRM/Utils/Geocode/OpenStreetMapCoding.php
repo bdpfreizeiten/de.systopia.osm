@@ -75,32 +75,31 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
     $params = [];
     $url = "https://" . self::$_server . self::$_uri .'?';
 
-    // TODO: is there a more failsafe format for street and street-number?
-    if (CRM_Utils_Array::value('street_address', $values) && !empty($values['street_address'])) {
+    if (!empty($values['street_address'])) {
       $params['street'] = $values['street_address'];
     }
 
-    if (CRM_Utils_Array::value('city', $values) && !empty($values['city'])) {
+    if (!empty($values['city'])) {
       $params['city'] = $values['city'];
     }
 
-    if (CRM_Utils_Array::value('postal_code', $values) && !empty($values['postal_code'])) {
+    if (!empty($values['postal_code'])) {
       $params['postalcode'] = $values['postal_code'];
     }
    
     if (count($params) === 0){
       // set only if there is no real address, else geocode
 
-      if (CRM_Utils_Array::value('state_province', $values) && !empty($values['state_province'])) {
+      if (!empty($values['state_province'])) {
         $params['state'] =$values['state_province'];
       }
       else{
-        if (CRM_Utils_Array::value('state_province_id', $values)) {
+        if (!empty($values['state_province_id'])) {
           $params['state'] = CRM_Core_DAO::getFieldValue('CRM_Core_DAO_StateProvince', $values['state_province_id']);
         }
       }
 
-      if (CRM_Utils_Array::value('county_id', $values) && !empty($values['county_id'])) {
+      if (!empty($values['county_id'])) {
         $counties = \Civi\Api4\County::get(FALSE)
           ->addWhere('id', '=', $values['county_id'])
           ->execute();
@@ -111,7 +110,7 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
       }
     }
 
-    if (CRM_Utils_Array::value('country', $values) && !empty($values['country'])) {
+    if (!empty($values['country'])) {
       $params['country'] = $values['country'];
     }
 
@@ -164,7 +163,7 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
    * @return array
    * @throws \GuzzleHttp\Exception\GuzzleException
    */
-  private static function makeRequest($url, $params): array {
+  private static function makeRequest($url, $params = []): array {
     // Nominatim requires that we cache lookups, since they're donating this
     // service for free.
 
@@ -192,7 +191,7 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
 
       // check if request was successful
       if ($request->getStatusCode() != 200) {
-        CRM_Core_Error::debug_log_message('Geocoding failed, invalid response code ' . $request->getStatusCode());
+        \Civi::log()->info('Geocoding failed, invalid response code ' . $request->getStatusCode());
         return ['geo_code_error' => 'Geocoding failed, invalid response code ' . $request->getStatusCode()];
         if ($request->getStatusCode() == 429) {
           // provider says 'TOO MANY REQUESTS'
@@ -211,7 +210,7 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
     if (is_null($json) || !is_array($json)) {
       // $string could not be decoded; maybe the service is down...
       // We don't save this in the cache.
-      CRM_Core_Error::debug_log_message('Geocoding failed. "' . $string . '" is no valid json-code. (' . $url . ')');
+      \Civi::log()->info('Geocoding failed. "' . $string . '" is no valid json-code. (' . $url . ')');
       return ['geo_code_error' => 'Geocoding failed. "' . $string . '" is no valid json-code. (' . $url . ')'];
 
     }
@@ -250,7 +249,7 @@ class CRM_Utils_Geocode_OpenStreetMapCoding {
   }
 
   /**
-   * @param object $address
+   * @param array $address
    *   address from geocoding result
    * @return array
    *   ID of state and conty
